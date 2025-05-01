@@ -1,0 +1,150 @@
+package rules;
+
+import com.example.aerolineadrools.model.ReserveResponse
+import com.example.aerolineadrools.model.ReserveRequest
+import com.example.aerolineadrools.model.Passenger
+import com.example.aerolineadrools.model.Seat
+
+
+dialect  "mvel"
+
+rule "1. UpgradeToBusinessClassForFrequentFlyersWithDelays"
+when
+    $request : ReserveRequest(status == "gold" || status == "platinum", flightDelay > 60, classFlight != "ejecutiva")
+    $response: ReserveResponse()
+then
+    $response.setUpgrade(true);
+    $response.setMessage("Ascenso a clase ejecutiva otorgado por retraso.");
+end
+
+rule "2. PriorityCheckInForSeniors"
+when
+    $request : ReserveRequest(passenger.age > 65)
+    $response: ReserveResponse()
+then
+    $response.setPriority(true);
+    $response.setMessage("Check-in prioritario otorgado a pasajero mayor.");
+end
+//
+rule "3. DiscountForLightLuggage"
+when
+    $request : ReserveRequest(weightlubbage < 10)
+    $response: ReserveResponse()
+then
+    $response.setDiscount(true);
+end
+
+rule "4. DenyUpgradeForOverweightLuggage"
+when
+    $request : ReserveRequest(weightlubbage > 23)
+    $response: ReserveResponse()
+then
+    $response.setPassengerEligible(true);
+end
+
+rule "5. AssignEmergencyExitSeatToYoungAdults"
+when
+    $request: ReserveRequest(passenger.age > 18 && passenger.age < 40, passenger.preferences == "any")
+    $seat: Seat(type == "Emergencia", available == true)
+    $response: ReserveResponse()
+then
+    $seat.setAvailable(false); // Marcamos como ocupado
+    $response.setSeatType($seat.getType());
+end
+
+rule "6. CompensationForExtremeDelays"
+when
+    $request: ReserveRequest(flightDelay > 180)
+    $response: ReserveResponse()
+then
+    $response.setCompensation(true);
+end
+
+rule "7. ExtraLoyaltyPointsForLongFlights"
+when
+    $request : ReserveRequest(flightDuration > 5 && status != "basic")
+    $response: ReserveResponse()
+then
+    $response.setLoyaltyPoints(500);
+end
+//
+rule "8. RestrictLuggageOnShortFlights"
+when
+    $request: ReserveRequest(weightlubbage > 15 && flightDuration < 2)
+    $response: ReserveResponse()
+then
+    $response.setLuggageAllowed(true);
+end
+
+rule "9. VipLoungeAccessForPlatinumMembers"
+when
+    $request : ReserveRequest(status == "platinum")
+    $response: ReserveResponse()
+then
+    $response.setVipAccess(true);
+end
+
+rule "10. PreferentialSeatForFamilies"
+    salience 100 // Mayor prioridad
+when
+    $request: ReserveRequest(children == "yes")
+    $passenger: Passenger() from $request.passenger
+    eval($passenger.getPreferences().equals("any"))
+    $seat: Seat(type == "Familiar", available == true)
+    $response: ReserveResponse(seatType == null || seatType == "")
+then
+    modify($seat) { setAvailable(false) }
+    modify($response) { setSeatType($seat.getType()) }
+end
+
+rule "AssignNormalSeat"
+    salience 50
+when
+    $request: ReserveRequest()
+    $passenger: Passenger() from $request.passenger
+    eval($passenger.getPreferences().equals("normal"))
+    $seat: Seat(type == "Normal", available == true)
+    $response: ReserveResponse(seatType == null || seatType == "")
+then
+    modify($seat) { setAvailable(false) }
+    modify($response) { setSeatType($seat.getType()) }
+end
+
+rule "AssignEmergencySeat"
+    salience 50
+when
+    $request: ReserveRequest()
+    $passenger: Passenger() from $request.passenger
+    eval($passenger.getPreferences().equals("emergency"))
+    $seat: Seat(type == "Emergencia", available == true)
+    $response: ReserveResponse(seatType == null || seatType == "")
+then
+    modify($seat) { setAvailable(false) }
+    modify($response) { setSeatType($seat.getType()) }
+end
+
+rule "AssignFamilySeat"
+    salience 50
+when
+    $request: ReserveRequest()
+    $passenger: Passenger() from $request.passenger
+    eval($passenger.getPreferences().equals("family"))
+    $seat: Seat(type == "Familiar", available == true)
+    $response: ReserveResponse(seatType == null || seatType == "")
+then
+    modify($seat) { setAvailable(false) }
+    modify($response) { setSeatType($seat.getType()) }
+end
+
+rule "AssignAnyAvailableSeat"
+    salience 10 // Menor prioridad
+when
+    $request: ReserveRequest(children == "no")
+    $passenger: Passenger() from $request.passenger
+    eval($passenger.getPreferences().equals("any"))
+    $seat: Seat(available == true)
+    $response: ReserveResponse(seatType == null || seatType == "")
+then
+    modify($seat) { setAvailable(false) }
+    modify($response) { setSeatType($seat.getType()) }
+end
